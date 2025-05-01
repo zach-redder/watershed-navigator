@@ -1,55 +1,78 @@
 import streamlit as st
-import tempfile
 import sys
 import os
+import re
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-
-from src.rag.ingest import ingest_file
-from src.rag.retrieve import embed_and_store, get_top_k_docs
+from src.rag.ingest import preload_documents
+from src.rag.embedding_store import search
 from src.rag.prompt import format_prompt
 from src.models.llama_wrapper import ask_llama
 
-st.set_page_config(page_title="Watershed Navigator")
+st.set_page_config(
+    page_title="Watershed Navigator",
+    page_icon="🌊",
+)
+
+if not os.path.exists("store/embeddings.pkl"):
+    with st.spinner("Preloading documents..."):
+        preload_documents()
+
+def format_answer(text: str, max_sentences_per_block=2) -> str:
+    # Check for signs of a list
+    has_numbered_list = re.search(r"^\s*\d+\.\s", text, re.MULTILINE)
+    has_bulleted_list = re.search(r"^\s*[-•–]\s", text, re.MULTILINE)
+
+    if has_numbered_list or has_bulleted_list:
+        # Skip formatting if it's a list
+        return text
+
+    # Otherwise, run normal paragraph formatter
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    chunks = [
+        ' '.join(sentences[i:i + max_sentences_per_block])
+        for i in range(0, len(sentences), max_sentences_per_block)
+    ]
+    return '\n\n'.join(chunks)
+
+
 st.title("Watershed Navigator")
-st.markdown("Ask a question about environmental issues and problems you're facing.")
-
-# File upload
-uploaded_file = st.file_uploader("Upload PDF or CSV", type=["pdf", "csv"])
-
-# Store & embed the uploaded file
-if uploaded_file is not None:
-    with tempfile.NamedTemporaryFile(delete=False, suffix=uploaded_file.name) as tmp_file:
-        tmp_file.write(uploaded_file.read())
-        file_path = tmp_file.name
-
-    st.success(f"Uploaded: {uploaded_file.name}")
-    st.write("📥 Ingesting and embedding...")
-    
-    try:
-        docs = ingest_file(file_path)
-        embed_and_store(docs)
-        st.success("✅ File embedded successfully!")
-    except Exception as e:
-        st.error(f"Error processing file: {e}")
-        st.stop()
-
-# Ask a question
 question = st.text_input("Ask your question:")
 
+top_docs = []
+
 if st.button("Get Answer") and question:
-    with st.spinner("Thinking..."):
-        try:
-            top_docs = get_top_k_docs(question, k=3)
-            context = "\n\n".join([doc["text"] for doc in top_docs])
-            prompt = format_prompt(context, question)
-            answer = ask_llama(prompt)
+    top_docs = search(question, k=3)
 
-            st.markdown("### 🤖 Answer")
-            st.write(answer)
+is_relevant = bool(top_docs)
 
-            with st.expander("📚 Sources"):
-                for doc in top_docs:
-                    st.markdown(f"- From `{doc['source']}`")
-        except Exception as e:
-            st.error(f"Something went wrong: {e}")
+if not is_relevant:
+    # Optional: Check if question contains keywords like "stormwater", "watershed", etc.
+    relevant_keywords = [
+        "stormwater", "watershed", "pollutant", "tmdl", "runoff", "hydrology", "modeling",
+        "bacteria", "phosphorus", "green infrastructure", "riparian", "ms4", "nbs",
+        "sediment", "sampling", "retention", "mitigation", "low-impact development", "swmm", "compliance"
+    ]  
+    if any(word in question.lower() for word in relevant_keywords):
+        # Relevant, but not in docs → fall back to general LLM
+        st.markdown("### Answer - General Response")
+        answer = ask_llama(question)  # Skip doc context, just answer normally
+        st.write(format_answer(answer))
+    else:
+        # Irrelevant topic → reject
+        st.markdown("### No Answer")
+        st.warning("That topic doesn't appear in the documents or relate to the domain of this assistant.")
+else:
+    # Relevant AND in docs → RAG as normal
+    context = "\n\n".join([doc["text"] for doc in top_docs])
+    prompt = format_prompt(context, question)
+    answer = ask_llama(prompt)
+
+    st.markdown("### Answer - RAG Response")
+    st.write(format_answer(answer))
+
+    st.markdown("### Sources")
+    unique_sources = {os.path.basename(doc['source']) for doc in top_docs}
+    for source in unique_sources:
+        st.markdown(f"- `{source}`")

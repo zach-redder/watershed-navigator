@@ -1,26 +1,22 @@
-import os
-import pandas as pd
-import fitz  # PyMuPDF
 from pathlib import Path
-from typing import List, Dict
+from src.rag.embedding_store import build_index
 from src.utils.pdf_utils import extract_text_from_pdf
 from src.utils.format import chunk_text
+import pandas as pd
 
-CHUNK_SIZE = 500
-OVERLAP = 50
+def preload_documents(folder="data"):
+    docs = []
 
-def process_csv(file_path: str) -> List[str]:
-    df = pd.read_csv(file_path)
-    return [row.to_json() for _, row in df.iterrows()]
+    for file in Path(folder).glob("*"):
+        if file.suffix == ".pdf":
+            text = extract_text_from_pdf(str(file))
+            chunks = chunk_text(text, chunk_size=1000)
+        elif file.suffix == ".csv":
+            df = pd.read_csv(file)
+            chunks = [row.to_json() for _, row in df.iterrows()]
+        else:
+            continue
 
-def ingest_file(file_path: str) -> List[Dict]:
-    ext = Path(file_path).suffix.lower()
-    if ext == ".pdf":
-        text = extract_text_from_pdf(file_path)
-        chunks = chunk_text(text)
-        return [{"text": chunk, "source": file_path} for chunk in chunks]
-    elif ext == ".csv":
-        rows = process_csv(file_path)
-        return [{"text": row, "source": file_path} for row in rows]
-    else:
-        raise ValueError(f"Unsupported file type: {ext}")
+        docs.extend([{"text": chunk, "source": str(file)} for chunk in chunks])
+
+    build_index(docs)

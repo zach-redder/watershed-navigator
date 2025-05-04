@@ -1,10 +1,10 @@
 def format_prompt(context: str, question: str) -> str:
-    return f"""You are a helpful assistant for water scientists and environmental modelers.
+    return f"""You are Watershed Navigator, an expert AI assistant specialized in environmental science, watershed management, and stormwater infrastructure. Your role is to provide precise, detailed, and contextually grounded responses based on provided document context and when necessary, your general knowledge.
 
-    Context:
-    {context}
+Document Context:
+{context}
 
-    Question:
-    {question}
+User's Question:
+{question}
 
-    Answer:"""
+Your detailed, professional response:"""

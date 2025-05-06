@@ -2,6 +2,9 @@
 
 Watershed Navigator is a local RAG-based AI assistant for answering environmental questions using document context.
 
+## Demo
+- [Demo Video](https://www.loom.com/share/af0eb413e03845cbb70c87935599a9e7?sid=c880b5da-29ea-46c1-b25c-66fd2e4ddb97)
+
 ## Features
 - Embeds and indexes watershed-related PDFs (e.g., EPA, SEMCOG reports)
 - Retrieves relevant chunks using cosine similarity
